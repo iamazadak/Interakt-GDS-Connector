@@ -1,0 +1,87 @@
+# =============================================================================
+# .gitignore — Interakt CRM Masterdata Connector
+# =============================================================================
+
+# ── Sensitive / Secret files ──────────────────────────────────────────────────
+# Never commit API keys, credentials, or tokens
+*.env
+.env
+.env.*
+secrets.toml
+.streamlit/secrets.toml
+
+# ── Large / Sample data files ─────────────────────────────────────────────────
+# Real lead data must never be committed to a public repo
+*.csv
+*.xlsx
+*.xls
+
+# ── Word temp files (lock files created when docx is open in Word) ────────────
+~$*.docx
+~$*.doc
+
+# ── Scratch / temp files generated during development ────────────────────────
+sop_extract.txt
+sop_paras.txt
+sop_style.txt
+swap.py
+gen_sop.py
+gen_gas_sop.py
+add_tooltips.py
+replace.py
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+.streamlit/
+
+# ── Jupyter Notebooks ─────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── OS artifacts ─────────────────────────────────────────────────────────────
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ── IDE / Editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
