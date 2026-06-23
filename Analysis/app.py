@@ -52,12 +52,22 @@ def process_data(df):
         df['Status'] = df['Status'].fillna('Unknown')
         
     # Ensure standard string formats for categoricals
-    categorical_cols = ['Status', 'Call Disposition', 'Campaign Name', 'Account Owner Name', 'State', 'City', 'Qualification', 'Gender', 'Lead Source', 'Entry Channel']
+    categorical_cols = ['Status', 'Call Disposition', 'Campaign Name', 'Account Owner Name', 'State', 'City', 'Qualification', 'Gender', 'Lead Source', 'Entry Channel', 'Rank']
     for col in categorical_cols:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip().replace({'nan': 'Unknown', '': 'Unknown'})
             df[col] = df[col].fillna('Unknown')
             
+    # Gender Standardization
+    if 'Gender' in df.columns:
+        def standardize_gender(g):
+            g_clean = str(g).lower().strip()
+            if g_clean in ['male', 'm']: return 'Male'
+            if g_clean in ['female', 'f']: return 'Female'
+            if g_clean == 'unknown': return 'Unknown'
+            return 'Others'
+        df['Gender'] = df['Gender'].apply(standardize_gender)
+        
     # Deal Value (Robust cleanup)
     if 'Deal Value' in df.columns:
         df['Deal Value'] = df['Deal Value'].astype(str).str.replace(r'[^\d.]', '', regex=True)
@@ -68,6 +78,14 @@ def process_data(df):
     # Days to Closure
     if 'Days to Closure' in df.columns:
         df['Days to Closure'] = pd.to_numeric(df['Days to Closure'], errors='coerce')
+        
+    # Age Bracket Generation
+    if 'Age in Years' in df.columns:
+        df['Age in Years'] = pd.to_numeric(df['Age in Years'], errors='coerce')
+        bins = [0, 18, 21, 24, 27, 29, 200]
+        labels = ['<18', '18-20', '21-23', '24-26', '27-28', '29+']
+        df['Age Bracket'] = pd.cut(df['Age in Years'], bins=bins, labels=labels, right=False)
+        df['Age Bracket'] = df['Age Bracket'].astype(str).replace({'nan': 'Unknown'})
         
     # Is Conversion flag
     df['Is Conversion'] = df['Status'].isin(CONVERSION_STATUSES)
@@ -378,14 +396,63 @@ if uploaded_file is not None:
             gender['Not Contacted'] = gender['Leads'] - gender['Contacted']
             gender['Contacted (Not Converted)'] = gender['Contacted'] - gender['Converted']
             gender_plot = gender.melt(id_vars=['Gender'], value_vars=['Not Contacted', 'Contacted (Not Converted)', 'Converted'], var_name='Type', value_name='Count')
-            fig_gender = px.bar(gender_plot, x='Gender', y='Count', color='Type', title="Top By Gender", color_discrete_map={'Converted': SECONDARY_COLOR, 'Contacted (Not Converted)': PRIMARY_COLOR, 'Not Contacted': TERTIARY_COLOR}, text_auto=True)
+            fig_gender = px.bar(gender_plot, x='Gender', y='Count', color='Type', title="By Gender", color_discrete_map={'Converted': SECONDARY_COLOR, 'Contacted (Not Converted)': PRIMARY_COLOR, 'Not Contacted': TERTIARY_COLOR}, text_auto=True)
             figs['gender'] = optimize_fig(fig_gender)
             st.plotly_chart(figs['gender'], use_container_width=True)
             if unknown_gender > 0:
                 st.caption(f"Ignored {unknown_gender} Unknown ({unknown_gender_pct:.1f}% of Total Data)")
 
+    dc4, dc5 = st.columns(2)
+    if 'Rank' in df.columns:
+        with dc4:
+            rank = df.groupby('Rank').agg(
+                Leads=('Status', 'count'),
+                Contacted=('Is Contacted', 'sum'),
+                Converted=('Is Conversion', 'sum')
+            ).reset_index()
+            total_rank = rank['Leads'].sum()
+            unknown_rank = rank[rank['Rank'] == 'Unknown']['Leads'].sum() if 'Unknown' in rank['Rank'].values else 0
+            unknown_rank_pct = (unknown_rank / total_rank * 100) if total_rank > 0 else 0
+            
+            rank = rank[rank['Rank'] != 'Unknown'].sort_values('Leads', ascending=False)
+            rank['Not Contacted'] = rank['Leads'] - rank['Contacted']
+            rank['Contacted (Not Converted)'] = rank['Contacted'] - rank['Converted']
+            rank_plot = rank.head(10).melt(id_vars=['Rank'], value_vars=['Not Contacted', 'Contacted (Not Converted)', 'Converted'], var_name='Type', value_name='Count')
+            fig_rank = px.bar(rank_plot, x='Rank', y='Count', color='Type', title="By Rank", color_discrete_map={'Converted': SECONDARY_COLOR, 'Contacted (Not Converted)': PRIMARY_COLOR, 'Not Contacted': TERTIARY_COLOR}, text_auto=True)
+            figs['rank'] = optimize_fig(fig_rank)
+            st.plotly_chart(figs['rank'], use_container_width=True)
+            if unknown_rank > 0:
+                st.caption(f"Ignored {unknown_rank} Unknown ({unknown_rank_pct:.1f}% of Total Data)")
+
+    if 'Age Bracket' in df.columns:
+        with dc5:
+            age = df.groupby('Age Bracket').agg(
+                Leads=('Status', 'count'),
+                Contacted=('Is Contacted', 'sum'),
+                Converted=('Is Conversion', 'sum')
+            ).reset_index()
+            total_age = age['Leads'].sum()
+            unknown_age = age[age['Age Bracket'] == 'Unknown']['Leads'].sum() if 'Unknown' in age['Age Bracket'].values else 0
+            unknown_age_pct = (unknown_age / total_age * 100) if total_age > 0 else 0
+            
+            age = age[age['Age Bracket'] != 'Unknown']
+            bracket_order = ['<18', '18-20', '21-23', '24-26', '27-28', '29+']
+            age['Age Bracket'] = pd.Categorical(age['Age Bracket'], categories=bracket_order, ordered=True)
+            age = age.sort_values('Age Bracket')
+            
+            age['Not Contacted'] = age['Leads'] - age['Contacted']
+            age['Contacted (Not Converted)'] = age['Contacted'] - age['Converted']
+            age_plot = age.melt(id_vars=['Age Bracket'], value_vars=['Not Contacted', 'Contacted (Not Converted)', 'Converted'], var_name='Type', value_name='Count')
+            fig_age = px.bar(age_plot, x='Age Bracket', y='Count', color='Type', title="By Age Bracket", color_discrete_map={'Converted': SECONDARY_COLOR, 'Contacted (Not Converted)': PRIMARY_COLOR, 'Not Contacted': TERTIARY_COLOR}, text_auto=True)
+            figs['age'] = optimize_fig(fig_age)
+            st.plotly_chart(figs['age'], use_container_width=True)
+            if unknown_age > 0:
+                st.caption(f"Ignored {unknown_age} Unknown ({unknown_age_pct:.1f}% of Total Data)")
+
     st.markdown("#### Converted Leads Breakdown", help="Treemaps and Pie charts visualizing the distribution of successful conversions across demographic segments. Excludes 'Unknown' values.")
     pc1, pc2, pc3 = st.columns(3)
+    
+    total_convs = df['Is Conversion'].sum()
     
     if 'Qualification' in df.columns:
         with pc1:
@@ -395,7 +462,6 @@ if uploaded_file is not None:
             figs['qual_pie'] = optimize_fig(fig_qual_pie)
             st.plotly_chart(figs['qual_pie'], use_container_width=True)
             
-            total_convs = df['Is Conversion'].sum()
             unknown_qual_conv = df[(df['Qualification'] == 'Unknown') & (df['Is Conversion'])]['Is Conversion'].sum() if 'Unknown' in df['Qualification'].values else 0
             if unknown_qual_conv > 0 and total_convs > 0:
                 st.caption(f"Ignored {unknown_qual_conv} Unknown converted ({(unknown_qual_conv/total_convs*100):.1f}% of Total Converted)")
@@ -424,6 +490,32 @@ if uploaded_file is not None:
             if unknown_gender_conv > 0 and total_convs > 0:
                 st.caption(f"Ignored {unknown_gender_conv} Unknown converted ({(unknown_gender_conv/total_convs*100):.1f}% of Total Converted)")
 
+    pc4, pc5 = st.columns(2)
+    if 'Rank' in df.columns:
+        with pc4:
+            conv_rank = rank[rank['Converted'] > 0]
+            if not conv_rank.empty:
+                fig_rank_pie = px.treemap(conv_rank, path=[px.Constant("All"), 'Rank'], values='Converted', title="Converted by Rank", color_discrete_sequence=COLORS)
+                fig_rank_pie.update_traces(textinfo='label+value+percent parent')
+                figs['rank_pie'] = optimize_fig(fig_rank_pie)
+                st.plotly_chart(figs['rank_pie'], use_container_width=True)
+                
+                unknown_rank_conv = df[(df['Rank'] == 'Unknown') & (df['Is Conversion'])]['Is Conversion'].sum() if 'Unknown' in df['Rank'].values else 0
+                if unknown_rank_conv > 0 and total_convs > 0:
+                    st.caption(f"Ignored {unknown_rank_conv} Unknown converted ({(unknown_rank_conv/total_convs*100):.1f}% of Total Converted)")
+                    
+    if 'Age Bracket' in df.columns:
+        with pc5:
+            conv_age = age[age['Converted'] > 0]
+            if not conv_age.empty:
+                fig_age_pie = px.pie(conv_age, values='Converted', names='Age Bracket', title="Converted by Age Bracket", color_discrete_sequence=COLORS)
+                fig_age_pie.update_traces(textinfo='percent+value')
+                figs['age_pie'] = optimize_fig(fig_age_pie)
+                st.plotly_chart(figs['age_pie'], use_container_width=True)
+                
+                unknown_age_conv = df[(df['Age Bracket'] == 'Unknown') & (df['Is Conversion'])]['Is Conversion'].sum() if 'Unknown' in df['Age Bracket'].values else 0
+                if unknown_age_conv > 0 and total_convs > 0:
+                    st.caption(f"Ignored {unknown_age_conv} Unknown converted ({(unknown_age_conv/total_convs*100):.1f}% of Total Converted)")
 
     st.markdown("---")
     
@@ -459,7 +551,32 @@ if uploaded_file is not None:
             st.caption(f"Ignored {unknown_camp} Unknown leads ({unknown_camp_pct:.1f}% of Total Data)")
         
         with st.expander("View Full Campaign Table"):
-            st.dataframe(campaigns)
+            st.dataframe(campaigns.drop(columns=['Contacted (Not Converted)'], errors='ignore'))
+            
+        if 'Rank' in df.columns:
+            st.markdown("---")
+            st.subheader("Campaign vs Rank Distribution", help="A matrix showing the volume of leads generated by each campaign across different ranks.")
+            
+            camp_rank_df = df[(df['Campaign Name'] != 'Unknown') & (df['Rank'] != 'Unknown')]
+            if not camp_rank_df.empty:
+                fig_camp_rank = px.density_heatmap(
+                    camp_rank_df, 
+                    y='Campaign Name', 
+                    x='Rank', 
+                    title="Campaign by Rank Distribution",
+                    text_auto=True, 
+                    color_continuous_scale='Teal'
+                )
+                fig_camp_rank.update_layout(xaxis={'categoryorder': 'category ascending'}, yaxis={'categoryorder': 'total ascending'})
+                figs['camp_rank_matrix'] = optimize_fig(fig_camp_rank)
+                st.plotly_chart(figs['camp_rank_matrix'], use_container_width=True)
+                
+                with st.expander("View Pivot Table Data"):
+                    pivot_display = pd.crosstab(camp_rank_df['Campaign Name'], camp_rank_df['Rank'], margins=True, margins_name="Grand Total")
+                    try:
+                        st.dataframe(pivot_display.style.background_gradient(cmap='GnBu', axis=None))
+                    except Exception:
+                        st.dataframe(pivot_display)
 
     # =============================================================================
     # Export Reports (Moved to Sidebar)
@@ -485,10 +602,12 @@ if uploaded_file is not None:
             if 'Month' in df.columns and 'monthly' in locals(): export_dfs['Monthly'] = monthly
             if 'ISO_Week' in df.columns and 'weekly' in locals(): export_dfs['Weekly'] = weekly
             if 'Account Owner Name' in df.columns and 'agents' in locals(): export_dfs['Agents'] = agents
-            if 'Campaign Name' in df.columns and 'campaigns' in locals(): export_dfs['Campaigns'] = campaigns
+            if 'Campaign Name' in df.columns and 'campaigns' in locals(): export_dfs['Campaigns'] = campaigns.drop(columns=['Contacted (Not Converted)'], errors='ignore')
             if 'Qualification' in df.columns and 'qual' in locals(): export_dfs['Qualifications'] = qual
             if 'State' in df.columns and 'state' in locals(): export_dfs['States'] = state
             if 'Gender' in df.columns and 'gender' in locals(): export_dfs['Gender'] = gender
+            if 'Rank' in df.columns and 'rank' in locals(): export_dfs['Rank'] = rank
+            if 'Age Bracket' in df.columns and 'age' in locals(): export_dfs['Age Bracket'] = age
 
             if export_dfs:
                 excel_data = generate_excel_report(export_dfs)
